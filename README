@@ -1,0 +1,8 @@
+A wrapper around iptables ipsets commands for use with shorewall or any
+other firewall script/solution.
+
+Diego Morales 
+<dgmorales@gmail.com.br>
+<morales@propus.com.br>
+
+

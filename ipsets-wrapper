@@ -1,0 +1,97 @@
+#!/usr/bin/env python
+"""
+Creates and populates iptables' ipsets from files.
+
+This a wrapper around iptables ipsets commands for use with shorewall or any
+other firewall script/solution.
+
+Diego Morales 
+<dgmorales@gmail.com.br>
+<morales@propus.com.br>
+"""
+
+import os
+import sys
+import argparse
+import subprocess
+
+IPSETS_DEF_FILE = '/etc/shorewall/sets/ipsets.list'
+IPSETS_SETS_DIR = '/etc/shorewall/sets'
+
+
+def ipset(cmd):
+    'Runs ipset with cmd as argument.'
+    subprocess.call("ipset "  + cmd, shell=True)
+
+def parseIPsetsDefFile(filename):
+    'Read filename and returns a list of tuples (setname, setdefinition).'
+    return [ (l.split()[0], l.strip())
+        for l in open(filename).readlines() 
+        if notCommentNorBlank(l)
+    ]
+
+def updateSets(sets, recreate=False):
+    # TODO: honor recreate
+    for name, definition in sets:
+        # definition already contains the name
+        ipset("create " + definition) 
+
+def updateSetContents(setname, contentfile):
+    pass
+
+
+def notCommentNorBlank(txt):
+    "Returns not (is txt a comment (^#) or blank (spaces/tabs/empty)?)"
+    return not (txt.startswith("#") or txt.strip() == "")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        'Creates and populates iptables\' ipsets from files')
+
+    parser.add_argument('-f', "--setsfile", metavar='FILE', 
+        default=IPSETS_DEF_FILE,
+        help='File where the sets themselves are defined')
+        
+    parser.add_argument('-d', '--setsdir', metavar='DIR',
+        help= 'Directory where we find the files that define the contents'
+              ' of each set', default=IPSETS_SETS_DIR)
+    parser.add_argument('-q', '--quiet', action='store_true',
+        help='Supress all output on stdout')
+    parser.add_argument('-v', '--verbose', action='store_true',
+        help='Verbose output, will list each item added/removed from sets')
+    parser.add_argument('--nocontents', action='store_true',
+        help='Will not change set contents, only create sets (and remove them'
+             ' if --recreatesets is specified)')
+    parser.add_argument('--recreate', action='store_true',
+        help='When a defined set has the same name but not the same'
+             ' parameters of an existing set, this will destroy and'
+             ' then recreate it')
+    args = parser.parse_args()
+
+    # TODO I guess these tests do not support symlinks
+    if not (os.path.isfile(args.setsfile)):
+        print >> sys.stderr, "Error: %s is not a file." % args.setsfile
+        print >> sys.stderr, "Exiting..."
+        sys.exit(2)
+    elif not (os.path.isdir(args.setsdir)):
+        print >> sys.stderr, "Error: %s is not a dir." % args.setsdir
+        print >> sys.stderr, "Exiting..."
+        sys.exit(2)
+
+    # TODO honor verbose and quiet
+    sets = parseIPsetsDefFile(args.setsfile)
+    if len(sets) == 0:
+        print >> sys.stderr, "Warning: no sets are defined. Doing nothing."
+        sys.exit(0)
+
+    updateSets(sets, recreate=args.recreate)
+    
+    if not args.nocontents:
+        for setname, setdefinition in sets:
+            f = '/'.join((args.setsdir, setname))
+            if os.path.isfile(f):
+                updateSetContents(setname, f)
+            else:
+                print >> sys.stderr, "Warning: can't find %s file" % f
+
+    sys.exit(0)
