@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+"""
+Creates and populates iptables' ipsets from files.
+
+This a wrapper around iptables ipsets commands for use with shorewall or any
+other firewall script/solution.
+
+Diego Morales 
+<dgmorales@gmail.com.br>
+<morales@propus.com.br>
+"""
+
+import os
+import sys
+import argparse
+import subprocess
+
+IPSETS_DEF_FILE = '/etc/shorewall/sets/ipsets.list'
+IPSETS_SETS_DIR = '/etc/shorewall/sets'
+
+
+def ipset(cmd):
+    'Runs ipset with cmd as argument.'
+    r = None
+    try:
+        r = subprocess.check_output("ipset --exist "  + cmd, shell=True)
+    except subprocess.CalledProcessError, e:
+        print >> sys.stderr, \
+                'WARNING: error while runnning ipset command "%s".' % (cmd)
+        raise
+    return r
+
+
+def parseIPsetsDefFile(filename):
+    'Read filename and returns a list of tuples (setname, setdefinition).'
+
+    # fetch valid lines removing # commentaries from the end of each line.
+    definitions = [l.split('#')[0].strip() 
+            for l in open(filename).readlines() if notCommentNorBlank(l) ]
+    # extract setname from line 
+    return [ (l.split()[0], l) for l in definitions ]
+
+def updateSets(sets):
+    """Create defined sets.
+
+    Creating an identical already existing setting won't give any errors
+    (because of --exist option used in ipset()), but if the set has the same
+    name but different type/settings, then an error will happen. 
+    
+    We warn and let the user solve that.
+    """
+    for name, definition in sets:
+        # definition already contains the name
+        try:
+            ipset("create " + definition) 
+        except subprocess.CalledProcessError:
+            print >> sys.stderr, (
+                'WARNING: you got an error while creating a set. If this set '
+                'already exists with same name but different type or '
+                'settings, that is expected. Remove the set manually.')
+
+def updateSetContents(setname, contentfile, verbose=False):
+    """Update set content.
+    
+    It will check the set current content against the content defined in the
+    file and just remove and add elements as necessary to match the file.
+    """
+    # get current (on kernel) items and (saved) items from the definition file
+    l = ipset("list %s" % setname).splitlines()
+    current_items = set(l[l.index('Members:')+1:])
+    saved_items = set([i.split('#')[0].strip() 
+        for i in open(contentfile).readlines() if
+        notCommentNorBlank(i) 
+    ])
+
+    to_add = saved_items.difference(current_items)
+    to_remove = current_items.difference(saved_items)
+
+    for item in to_add:
+        try:
+            ipset("add %s %s" % (setname, item))
+            if verbose:
+                print 'Added %s to set %s.' % (item, setname)
+        except subprocess.CalledProcessError:
+            pass
+
+    for item in to_remove:
+        try:
+            ipset("del %s %s" % (setname, item))
+            if verbose:
+                print 'Removed %s from set %s.' % (item, setname)
+        except subprocess.CalledProcessError:
+            pass
+
+
+def notCommentNorBlank(txt):
+    "Returns not (is txt a comment (^#) or blank (spaces/tabs/empty)?)"
+    return not (txt.startswith("#") or txt.strip() == "")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        'Creates and populates iptables\' ipsets from files')
+
+    parser.add_argument('-f', "--setsfile", metavar='FILE', 
+        default=IPSETS_DEF_FILE,
+        help='File where the sets themselves are defined')
+        
+    parser.add_argument('-d', '--setsdir', metavar='DIR',
+        help= 'Directory where we find the files that define the contents'
+              ' of each set', default=IPSETS_SETS_DIR)
+    parser.add_argument('-q', '--quiet', action='store_true',
+        help='Supress all output on stdout')
+    parser.add_argument('-v', '--verbose', action='store_true',
+        help='Verbose output, will list each item added/removed from sets')
+    args = parser.parse_args()
+
+    # TODO I guess these tests do not support symlinks
+    if not (os.path.isfile(args.setsfile)):
+        print >> sys.stderr, "Error: %s is not a file." % args.setsfile
+        print >> sys.stderr, "Exiting..."
+        sys.exit(2)
+    elif not (os.path.isdir(args.setsdir)):
+        print >> sys.stderr, "Error: %s is not a dir." % args.setsdir
+        print >> sys.stderr, "Exiting..."
+        sys.exit(2)
+
+    sets = parseIPsetsDefFile(args.setsfile)
+    if len(sets) == 0:
+        if not args.quiet:
+            print "%s: no sets are defined. Doing nothing." % sys.argv[0]
+        sys.exit(0)
+
+    if args.verbose:
+        print '%s: updating ipsets based on %s and %s/* ...' % (sys.argv[0],
+                args.setsfile, args.setsdir)
+
+    updateSets(sets)
+    
+    for setname, setdefinition in sets:
+        f = '/'.join((args.setsdir, setname))
+        if os.path.isfile(f):
+            updateSetContents(setname, f, args.verbose)
+        else:
+            print >> sys.stderr, "Warning: can't find %s file" % f
+
+    sys.exit(0)
