@@ -15,8 +15,8 @@ import sys
 import argparse
 import subprocess
 
-IPSETS_DEF_FILE = '/etc/shorewall/sets/ipsets.list'
-IPSETS_SETS_DIR = '/etc/shorewall/sets'
+IPSETS_DEF_FILE = '/etc/ipsets/set.list'
+IPSETS_SETS_DIR = '/etc/ipsets'
 
 
 def ipset(cmd):
@@ -112,6 +112,8 @@ if __name__ == "__main__":
         help='Supress all output on stdout')
     parser.add_argument('-v', '--verbose', action='store_true',
         help='Verbose output, will list each item added/removed from sets')
+    parser.add_argument('--createonly', action='store_true',
+        help='Only create sets, will not change set contents.')
     args = parser.parse_args()
 
     # TODO I guess these tests do not support symlinks
@@ -136,11 +138,12 @@ if __name__ == "__main__":
 
     updateSets(sets)
     
-    for setname, setdefinition in sets:
-        f = '/'.join((args.setsdir, setname))
-        if os.path.isfile(f):
-            updateSetContents(setname, f, args.verbose)
-        else:
-            print >> sys.stderr, "Warning: can't find %s file" % f
+    if not args.createonly:
+        for setname, setdefinition in sets:
+            f = '/'.join((args.setsdir, setname))
+            if os.path.isfile(f):
+                updateSetContents(setname, f, args.verbose)
+            else:
+                print >> sys.stderr, "Warning: can't find %s file" % f
 
     sys.exit(0)
