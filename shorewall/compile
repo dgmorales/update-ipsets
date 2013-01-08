@@ -1,0 +1,3 @@
+#!/usr/bin/env perl
+print "Running update-ipsets --createonly ... \n";
+print `update-ipsets -f /etc/shorewall/sets/set.list --setsdir /etc/shorewall/sets --createonly`;

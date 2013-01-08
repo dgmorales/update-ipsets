@@ -1,0 +1,1 @@
+update-ipsets -f /etc/shorewall/sets/set.list --setsdir /etc/shorewall/sets
